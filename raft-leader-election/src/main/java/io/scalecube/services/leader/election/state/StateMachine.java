@@ -109,7 +109,6 @@ public class StateMachine {
   }
 
   public StateMachine on(State state, Consumer consumer) {
-
     if (onStateHandlers.containsKey(state)) {
       onStateHandlers.get(state).add(consumer);
     } else {

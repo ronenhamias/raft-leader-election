@@ -41,12 +41,14 @@ public class RaftLeaderElection implements LeaderElectionService {
 
   private ServiceCall dispatcher;
 
-  private String candidateId;
+  private String memberId;
 
   private final int timeout;
 
   private final Config config;
 
+  private final AtomicReference<String> currentLeader = new AtomicReference<String>("");
+  
   public RaftLeaderElection(Config config) {
     this.config = config;
     this.timeout = new Random().nextInt(config.timeout() - (config.timeout() / 2)) + (config.timeout() / 2);
@@ -71,13 +73,13 @@ public class RaftLeaderElection implements LeaderElectionService {
   @Override
   public CompletableFuture<Leader> leader() {
 
-    return null;
+    return CompletableFuture.completedFuture(new Leader(this.memberId, this.currentLeader.get()));
   }
 
   
   public void start(Microservices seed) {
     this.microservices = seed;
-    this.candidateId = microservices.cluster().member().id();
+    this.memberId = microservices.cluster().member().id();
     this.dispatcher = microservices.dispatcher().create();
     this.stateMachine.transition(State.FOLLOWER, currentTerm.get()); 
   }
@@ -96,12 +98,14 @@ public class RaftLeaderElection implements LeaderElectionService {
     this.timeoutScheduler.reset(this.timeout);
     
     LogicalTimestamp term = LogicalTimestamp.fromBytes(request.term());
-    //System.out.println("Recived Heartbeat from: " +  request.memberId() + " term: " + term + " current-term: " +  currentTerm.get());
     
     if(currentTerm.get().isBefore(term)) {
       currentTerm.set(term);
     }
     stateMachine.transition(State.FOLLOWER, term);
+    
+    this.currentLeader.set(request.memberId());
+    
     return CompletableFuture.completedFuture(new HeartbeatResponse(currentTerm.get().toBytes()));
   }
 
@@ -138,7 +142,7 @@ public class RaftLeaderElection implements LeaderElectionService {
 
           try {
             dispatcher.invoke(composeRequest("heartbeat",
-                new HeartbeatRequest(currentTerm.get().toBytes(),this.candidateId)), instance)
+                new HeartbeatRequest(currentTerm.get().toBytes(),this.memberId)), instance)
                 .whenComplete((success, error) -> {
                   HeartbeatResponse response = success.data();
                   if (currentTerm.get().isBefore(LogicalTimestamp.fromBytes(response.term()))) {
@@ -161,10 +165,10 @@ public class RaftLeaderElection implements LeaderElectionService {
 
     services.forEach(instance -> {
       try {
-        System.out.println(candidateId +  " send vote current term" + currentTerm.get() + " to node " + instance.memberId());
+        System.out.println(memberId +  " send vote current term" + currentTerm.get() + " to node " + instance.memberId());
         dispatcher.invoke(composeRequest("vote", new VoteRequest(
             currentTerm.get().toBytes(),
-            candidateId)), instance).whenComplete((success, error) -> {
+            memberId)), instance).whenComplete((success, error) -> {
               VoteResponse vote = success.data();
               if (vote.granted()) {
                 voteLatch.countDown();
@@ -194,6 +198,7 @@ public class RaftLeaderElection implements LeaderElectionService {
       System.out.println(this.microservices.cluster().member().id() + " became leader");
       timeoutScheduler.stop();
       heartbeatScheduler.start(config.heartbeatInterval());
+      this.currentLeader.set(this.memberId);
     };
   }
 
