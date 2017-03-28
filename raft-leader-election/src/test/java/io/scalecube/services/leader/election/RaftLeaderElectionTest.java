@@ -3,13 +3,16 @@ package io.scalecube.services.leader.election;
 import io.scalecube.services.Microservices;
 import io.scalecube.services.leader.election.api.Leader;
 import io.scalecube.services.leader.election.api.LeaderElectionService;
+import io.scalecube.services.leader.election.state.State;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class RaftLeaderElectionTest {
 
@@ -30,13 +33,22 @@ public class RaftLeaderElectionTest {
     leaderElection2.start(node2);
     leaderElection3.start(node3);
     
+    leaderElection1.on(State.LEADER, onLeader());
+    leaderElection1.on(State.FOLLOWER, onFollower());
+    
+    leaderElection2.on(State.LEADER, onLeader());
+    leaderElection2.on(State.FOLLOWER, onFollower());
+    
+    leaderElection3.on(State.LEADER, onLeader());
+    leaderElection3.on(State.FOLLOWER, onFollower());
+   
     // wait for leader to be elected.
     Thread.sleep(7000);
     
     
     LeaderElectionService proxy = seed.proxy().api(LeaderElectionService.class).create();
     
-    CountDownLatch latch = new CountDownLatch(3);
+    CountDownLatch latch = new CountDownLatch(6);
     
     List<Leader> leaders = new ArrayList();
     for(int i =0 ; i < 6 ; i ++ ){
@@ -47,11 +59,27 @@ public class RaftLeaderElectionTest {
     }
     
     latch.await(3, TimeUnit.SECONDS);
+    String selected =leaders.get(0).leaderId();
+    leaders.stream().forEach(leader->{
+      System.out.println(leader);
+      Assert.assertEquals(selected, leader.leaderId());
+    });
     
-    System.out.println(leaders);
     
     System.out.println("DONE");
     
+  }
+
+  private Consumer onFollower() {
+    return leader->{
+      System.out.println("on state onFollower ");
+    };
+  }
+
+  private Consumer onLeader() {
+    return leader->{
+      System.out.println("on state leader ");
+    };
   }
 
 }

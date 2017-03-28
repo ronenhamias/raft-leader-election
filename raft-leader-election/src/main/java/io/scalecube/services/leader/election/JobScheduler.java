@@ -28,8 +28,8 @@ public class JobScheduler {
 
   public void stop() {
     
-    if (executor.get() != null && (!executor.get().isShutdown() || !executor.get().isTerminated())) {
-      executor.get().shutdown();
+    if (executor.get() != null) {
+      executor.get().shutdownNow();
     }
   }
 

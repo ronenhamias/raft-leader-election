@@ -1,7 +1,13 @@
 package io.scalecube.services.leader.election.api;
 
+import java.util.Arrays;
 
 public class HeartbeatRequest {
+
+  @Override
+  public String toString() {
+    return "HeartbeatRequest [term=" + Arrays.toString(term) + ", memberId=" + memberId + "]";
+  }
 
   private final byte[] term;
   private final String memberId;

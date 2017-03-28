@@ -10,7 +10,7 @@ public interface LeaderElectionService {
 
   public static final String SERVICE_NAME = "scalecube-leader-election";
  
-  @ServiceMethod()
+  @ServiceMethod("leader")
   public CompletableFuture<Leader> leader();
 
   @ServiceMethod("heartbeat")
@@ -18,4 +18,5 @@ public interface LeaderElectionService {
   
   @ServiceMethod("vote")
   CompletableFuture<VoteResponse> onRequestVote(VoteRequest request);
+  
 }

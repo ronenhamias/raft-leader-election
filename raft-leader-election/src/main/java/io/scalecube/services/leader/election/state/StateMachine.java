@@ -19,6 +19,10 @@ public class StateMachine {
 
   private AtomicReference<State> currentState;
 
+  public State currentState() {
+    return currentState.get();
+  }
+  
   public static final class Builder {
     private Map<State, List<State>> transitions = new HashMap<State, List<State>>();
 
@@ -118,4 +122,6 @@ public class StateMachine {
 
     return this;
   }
+
+  
 }

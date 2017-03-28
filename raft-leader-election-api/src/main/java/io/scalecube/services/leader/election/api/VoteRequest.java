@@ -2,11 +2,11 @@ package io.scalecube.services.leader.election.api;
 
 public class VoteRequest {
 
-  private byte[] term;
+  private final byte[] term;
   
-  private String candidateId;
+  private final String candidateId;
 
-  public VoteRequest(byte[] bytes, String candidateId) {
+  public VoteRequest(byte[] term, String candidateId) {
     this.term = term;
     this.candidateId = candidateId;
   }
