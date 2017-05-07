@@ -7,6 +7,10 @@ import io.scalecube.transport.Address;
 
 public class LeaderElectionMain {
 
+  /**
+   * starting a leader election node.
+   * @param args host and port for seed node.
+   */
   public static void main(String[] args) {
 
     if (args.length < 2) {
