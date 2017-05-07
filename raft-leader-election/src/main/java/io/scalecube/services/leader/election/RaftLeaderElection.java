@@ -7,6 +7,7 @@ import io.scalecube.services.ServiceInstance;
 import io.scalecube.services.leader.election.api.HeartbeatRequest;
 import io.scalecube.services.leader.election.api.HeartbeatResponse;
 import io.scalecube.services.leader.election.api.Leader;
+import io.scalecube.services.leader.election.api.LeaderElectionGossip;
 import io.scalecube.services.leader.election.api.LeaderElectionService;
 import io.scalecube.services.leader.election.api.VoteRequest;
 import io.scalecube.services.leader.election.api.VoteResponse;
@@ -212,7 +213,17 @@ public class RaftLeaderElection implements LeaderElectionService {
       timeoutScheduler.stop();
       heartbeatScheduler.start(config.heartbeatInterval());
       this.currentLeader.set(this.memberId);
+      
+      // spread the gossip about me as a new leader.
+      this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.LEADER));
     };
+  }
+
+  private Message newLeaderElectionGossip(State state) {
+    return Message.builder()
+        .header(LeaderElectionGossip.TYPE, state.toString())
+        .data(new LeaderElectionGossip(this.memberId,this.currentLeader.get(), this.currentTerm.get().toLong(), this.microservices.cluster().address()))
+        .build();
   }
 
   /**
@@ -228,6 +239,9 @@ public class RaftLeaderElection implements LeaderElectionService {
       heartbeatScheduler.stop();
       currentTerm.set(clock.tick());
       sendElectionCampaign();
+      
+      // spread the gossip about me as candidate.
+      this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.CANDIDATE));
     };
   }
 
@@ -241,6 +255,9 @@ public class RaftLeaderElection implements LeaderElectionService {
       LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       heartbeatScheduler.stop();
       timeoutScheduler.start(this.timeout);
+      
+      // spread the gossip about me as follower.
+      this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.FOLLOWER));
     };
   }
   
