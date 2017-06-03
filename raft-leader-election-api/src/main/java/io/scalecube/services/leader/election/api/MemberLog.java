@@ -1,6 +1,8 @@
 package io.scalecube.services.leader.election.api;
 
-public class MemberLog {
+import java.io.Serializable;
+
+public class MemberLog implements Serializable{
 
   public final long logIndex;
   

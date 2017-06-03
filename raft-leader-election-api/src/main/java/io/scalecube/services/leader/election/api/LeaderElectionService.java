@@ -19,4 +19,7 @@ public interface LeaderElectionService {
   @ServiceMethod("vote")
   CompletableFuture<VoteResponse> onRequestVote(VoteRequest request);
 
+  @ServiceMethod("append")
+  CompletableFuture<EntryResponse> append(EntryRequest request);
+  
 }

@@ -4,10 +4,14 @@ import java.io.Serializable;
 
 public class LogEntry implements Serializable {
 
-  private long term;
+  private final long term;
+  private final byte[] data;
+  
 
-  public LogEntry(long term) {
+
+  public LogEntry(long term, byte[] data) {
     this.term = term;
+    this.data = data;
   }
 
   public long term() {

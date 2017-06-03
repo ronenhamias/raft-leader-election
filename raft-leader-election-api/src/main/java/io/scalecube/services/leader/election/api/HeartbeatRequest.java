@@ -20,6 +20,8 @@ public class HeartbeatRequest {
 
     private long logIndex;
 
+    private LogEntry[] entries;
+
     public Builder term(LogicalTimestamp currentTerm) {
       this.currentTerm = currentTerm.toBytes();
       return this;
@@ -35,6 +37,11 @@ public class HeartbeatRequest {
       return this;
     }
 
+    public Builder entries(LogEntry[] entries) {
+      this.entries = entries;
+      return this;
+    }
+    
     public Message build() {
 
       return Message.builder()
@@ -43,8 +50,12 @@ public class HeartbeatRequest {
           .data(new HeartbeatRequest(
               this.currentTerm,
               this.memberId,
-              this.logIndex)).build();
+              this.logIndex,
+              this.entries
+              )).build();
     }
+
+    
     
   } 
   
@@ -64,15 +75,15 @@ public class HeartbeatRequest {
     this(term,memberId,nextIndex,null);
   }
   
-  public byte[] term() {
-    return term;
+  public LogicalTimestamp term() {
+    return LogicalTimestamp.fromBytes(term);
   }
 
   public String memberId() {
     return memberId;
   }
 
-  private LogEntry[] entries() {
+  public LogEntry[] entries() {
     return entries;
   }
 

@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -124,7 +125,7 @@ public class ChronicleRaftLog implements RaftLog {
 
   @Override
   public void append(LogEntry entry) {
-    log.put(index.incrementAndGet(), entry);
+    log.put(index.getAndIncrement(), entry);
     this.snapshoot();
   }
 
@@ -157,6 +158,21 @@ public class ChronicleRaftLog implements RaftLog {
   }
 
   @Override
+  public void append(byte[] data) {
+    log.put(index.incrementAndGet(), new LogEntry(currentTerm.get().toLong(), data));
+    snapshoot();
+  }
+
+  @Override
+  public void append(LogEntry[] entries) {
+    for(int i=0; i<entries.length ; i++){
+      log.put(index.getAndIncrement(), entries[i]);
+    }
+    this.snapshoot();
+    
+  }
+  
+  @Override
   public LogEntry getEntry(Long index) {
     return log.get(index);
   }
@@ -169,5 +185,20 @@ public class ChronicleRaftLog implements RaftLog {
   @Override
   public MemberLog getMemberLog(String memberId) {
     return (MemberLog) this.store.get(memberId);
+  }
+
+  @Override
+  public Optional<LogEntry[]> replicateEntries(String memberId) {
+    if (this.getMemberLog(memberId) != null) {
+      int batchSize = (int) (this.index() - getMemberLog(memberId).logIndex);
+      LogEntry[] entries = new LogEntry[batchSize];
+      if(batchSize > 0) {
+        for (Integer x = 0, i = (int) getMemberLog(memberId).logIndex(); i < this.index(); i++, x++) {
+          entries[x] = this.log.get(i.longValue());
+        }
+      }
+      return Optional.of(entries);
+    }
+    return Optional.empty(); // nothing to replicate.
   }
 }
