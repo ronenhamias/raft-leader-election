@@ -1,29 +1,26 @@
 package io.scalecube.services.leader.election.api;
 
-import java.util.Arrays;
-
 import io.scalecube.services.ServiceHeaders;
 import io.scalecube.transport.Message;
 
 public class HeartbeatRequest {
 
-  @Override
-  public String toString() {
-    return "HeartbeatRequest [term=" + Arrays.toString(term) + ", memberId=" + memberId + "]";
-  }
-
   public static class Builder{
 
-    private byte[] currentTerm;
-    
     private String memberId;
+    
+    private Long leaderTerm;
+    
+    private Long prevLogIndex;
+    
+    private long prevLogTerm;
 
-    private long logIndex;
-
+    private long leaderCommit;
+    
     private LogEntry[] entries;
 
     public Builder term(LogicalTimestamp currentTerm) {
-      this.currentTerm = currentTerm.toBytes();
+      this.prevLogIndex = currentTerm.toLong();
       return this;
     }
 
@@ -32,11 +29,21 @@ public class HeartbeatRequest {
       return this;
     }
 
-    public Builder nextIndex(long logIndex) {
-      this.logIndex =logIndex;
+    public Builder prevLogIndex(long prevLogIndex) {
+      this.prevLogIndex =prevLogIndex;
       return this;
     }
 
+    public Builder prevLogTerm(long prevLogTerm) {
+      this.prevLogTerm =prevLogTerm;
+      return this;
+    }
+
+    public Builder leaderCommit(long leaderCommit) {
+      this.leaderCommit =leaderCommit;
+      return this;
+    }
+    
     public Builder entries(LogEntry[] entries) {
       this.entries = entries;
       return this;
@@ -48,37 +55,42 @@ public class HeartbeatRequest {
           .header(ServiceHeaders.SERVICE_REQUEST, LeaderElectionService.SERVICE_NAME)
           .header(ServiceHeaders.METHOD, "heartbeat")
           .data(new HeartbeatRequest(
-              this.currentTerm,
               this.memberId,
-              this.logIndex,
+              this.leaderTerm,
+              this.prevLogTerm,
+              this.prevLogIndex,
+              this.leaderCommit,
               this.entries
               )).build();
-    }
-
-    
-    
+    }  
   } 
   
-  private final byte[] term;
-  private final String memberId;
-  private final LogEntry[] entries;
-  private final long nextIndex;
+  private String memberId;
   
-  private HeartbeatRequest(byte[] term, String memberId, long nextIndex, LogEntry[] entries) {
-    this.term = term;
+  private Long leaderTerm;
+  
+  private Long prevLogIndex;
+  
+  private long prevLogTerm;
+
+  private long leaderCommit;
+  
+  private LogEntry[] entries;
+  
+  private HeartbeatRequest(String memberId,long leaderTerm,long lastLogTerm, long lastLogIndex,long leaderCommit, LogEntry[] entries) {
     this.memberId = memberId;
+    this.leaderTerm = leaderTerm;
+    this.prevLogIndex = lastLogIndex;
+    this.prevLogTerm = lastLogTerm;
+    this.leaderCommit = leaderCommit;
     this.entries = entries;
-    this.nextIndex = nextIndex;
+    
   }
 
-  private HeartbeatRequest(byte[] term, String memberId,long nextIndex) {
-    this(term,memberId,nextIndex,null);
+  private HeartbeatRequest(String memberId,long leaderTerm,long lastLogTerm, long lastLogIndex,long leaderCommit) {
+    this(memberId,leaderTerm,lastLogTerm,lastLogIndex,leaderCommit,null);
   }
   
-  public LogicalTimestamp term() {
-    return LogicalTimestamp.fromBytes(term);
-  }
-
   public String memberId() {
     return memberId;
   }
@@ -89,6 +101,14 @@ public class HeartbeatRequest {
 
   public static Builder builder() {
       return new Builder();
+  }
+
+  public Long prevLogIndex() {
+    return this.prevLogIndex;
+  }
+  
+  public LogicalTimestamp prevLogTerm(){
+    return LogicalTimestamp.fromLong(this.prevLogTerm);
   }
 
 }

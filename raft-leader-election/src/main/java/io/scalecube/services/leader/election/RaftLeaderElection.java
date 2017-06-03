@@ -134,21 +134,30 @@ public class RaftLeaderElection implements LeaderElectionService {
     LOGGER.debug("member [{}] recived heartbeat request: [{}]", this.memberId, request);
     this.timeoutScheduler.reset(this.timeout);
 
-    if (raftLog.currentTerm().isBefore(request.term())) {
+    if (raftLog.currentTerm().isBefore(request.prevLogTerm())) {
       LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId,
-          raftLog.currentTerm(), request.term());
-      raftLog.currentTerm(request.term());
+          raftLog.currentTerm(), request.prevLogTerm());
+      raftLog.currentTerm(request.prevLogTerm());
     }
 
     if (!stateMachine.currentState().equals(State.FOLLOWER)) {
       LOGGER.info("member [{}] currentState [{}] and recived heartbeat. becoming FOLLOWER.", this.memberId,
           stateMachine.currentState());
-      stateMachine.transition(State.FOLLOWER, request.term());
+      stateMachine.transition(State.FOLLOWER, request.prevLogTerm());
     }
 
     this.currentLeader.set(request.memberId());
-    this.raftLog.append(request.entries());
-    return CompletableFuture.completedFuture(new HeartbeatResponse(this.memberId, raftLog.currentTerm().toBytes()));
+    
+    // consistency check did you have in the last log index an entry with this term?  
+    if(request.entries() !=null && request.entries().length > 0) {
+      this.raftLog.append(request.entries());
+    }  
+  
+    
+    return CompletableFuture.completedFuture(new HeartbeatResponse(
+        this.memberId, 
+        this.raftLog.currentTerm().toLong(),
+        this.raftLog.getEntry(request.prevLogIndex()).term() == request.prevLogIndex() ));
   }
 
   @Override
@@ -192,7 +201,7 @@ public class RaftLeaderElection implements LeaderElectionService {
           dispatcher.invoke(HeartbeatRequest.builder()
               .term(raftLog.currentTerm())
               .memberId(this.memberId)
-              .nextIndex(raftLog.getMemberLog(instance.memberId()).logIndex())
+              .prevLogIndex(raftLog.getMemberLog(instance.memberId()).logIndex())
               .entries(raftLog.replicateEntries(instance.memberId()).get())
               .build(), instance)
 

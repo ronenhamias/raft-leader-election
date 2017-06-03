@@ -1,27 +1,34 @@
 package io.scalecube.services.leader.election.api;
 
-import java.util.Arrays;
-
 public class HeartbeatResponse {
 
   @Override
   public String toString() {
-    return "HeartbeatResponse [term=" + Arrays.toString(term) + ", memberId=" + memberId + "]";
+    return "HeartbeatResponse [term=" + term + ", memberId=" + memberId + "]";
   }
-
-  private final byte[] term;
 
   private final String memberId;
 
-  public HeartbeatResponse(String memberId, byte[] term) {
-    this.term = term;
+  // currentTerm, for leader to update itself
+  private final long term;
+  
+  // true if follower contained entry matching  prevLogIndex and prevLogTerm
+  private final boolean success; 
+  
+  public HeartbeatResponse(String memberId, long term, boolean success) {
     this.memberId = memberId;
+    this.term = term;
+    this.success = success;
   }
 
   public LogicalTimestamp term() {
-    return LogicalTimestamp.fromBytes(term);
+    return LogicalTimestamp.fromLong(term);
   }
 
+  public boolean success() {
+    return success;
+  }
+  
   public String memberId() {
     return memberId;
   }
