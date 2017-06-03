@@ -8,6 +8,8 @@ import io.scalecube.services.leader.election.state.State;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -17,13 +19,33 @@ import java.util.function.Consumer;
 public class RaftLeaderElectionTest {
 
   @Test
-  public void test() throws InterruptedException {
+  public void test() throws InterruptedException, IOException {
   
     Microservices seed = Microservices.builder().build();
 
-    RaftLeaderElection leaderElection1 = new RaftLeaderElection(new Config());
-    RaftLeaderElection leaderElection2 = new RaftLeaderElection(new Config());
-    RaftLeaderElection leaderElection3 = new RaftLeaderElection(new Config());
+    RaftLeaderElection leaderElection1 = new RaftLeaderElection(new Config(
+    		ChronicleRaftLog.builder()
+			.entries(10)
+			.averageValueSize(2)
+			.persistedTo(new File("./target/node1/"))
+			.build()
+		));
+    
+    RaftLeaderElection leaderElection2 = new RaftLeaderElection(new Config(
+    		ChronicleRaftLog.builder()
+			.entries(10)
+			.averageValueSize(2)
+			.persistedTo(new File("./target/node2/"))
+			.build()
+		));
+    
+    RaftLeaderElection leaderElection3 = new RaftLeaderElection(new Config(
+    		ChronicleRaftLog.builder()
+			.entries(10)
+			.averageValueSize(2)
+			.persistedTo(new File("./target/node3/"))
+			.build()
+		));
     
     Microservices node1 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection1).build();
     Microservices node2 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection2).build();

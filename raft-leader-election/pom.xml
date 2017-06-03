@@ -30,7 +30,19 @@
 			<artifactId>log4j-slf4j-impl</artifactId>
 			<version>${log4j.version}</version>
 		</dependency>
-		
+
+ 		<dependency>
+			<groupId>net.openhft</groupId>
+			<artifactId>chronicle-map</artifactId>
+			<version>3.13.0</version>
+			<exclusions>
+                <exclusion>
+                    <groupId>com.sun.java</groupId>
+                    <artifactId>tools</artifactId>
+                </exclusion>
+            </exclusions>
+		</dependency>
+				
 		 <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>scalecube-services</artifactId>
@@ -43,5 +55,6 @@
             <version>${project.version}</version>
         </dependency>
         
+
 	</dependencies>
 </project>
