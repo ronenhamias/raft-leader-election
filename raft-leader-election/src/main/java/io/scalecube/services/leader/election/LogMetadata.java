@@ -3,29 +3,29 @@ package io.scalecube.services.leader.election;
 
 import java.io.Serializable;
 
-public class LogMetadata implements Serializable{
+public class LogMetadata implements Serializable {
 
-	private final long index;
-	
-	private long term;
+  private final long index;
 
-	private long commitedIndex;
+  private long term;
 
-	public LogMetadata(long newIndex, long term, long commitedIndex) {
-		this.index = newIndex;
-		this.term = term;
-		this.commitedIndex = commitedIndex;
-	}
+  private long commitedIndex;
 
-	public long term() {
-		return term;
-	}
-	
-	public long commitedIndex() {
-		return commitedIndex;
-	}
-	
-	public long index() {
-		return index;
-	}
+  public LogMetadata(long newIndex, long term, long commitedIndex) {
+    this.index = newIndex;
+    this.term = term;
+    this.commitedIndex = commitedIndex;
+  }
+
+  public long term() {
+    return term;
+  }
+
+  public long commitedIndex() {
+    return commitedIndex;
+  }
+
+  public long index() {
+    return index;
+  }
 }
