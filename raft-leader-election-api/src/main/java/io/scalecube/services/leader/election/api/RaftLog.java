@@ -2,18 +2,21 @@ package io.scalecube.services.leader.election.api;
 
 public interface RaftLog {
 
-	void append(LogEntry entry);
+  void append(LogEntry entry);
 
-	Long index();
+  Long index();
 
-	LogicalTimestamp currentTerm();
+  LogicalTimestamp currentTerm();
 
-	LogicalTimestamp nextTerm();
+  LogicalTimestamp nextTerm();
 
-	void currentTerm(LogicalTimestamp term);
+  void currentTerm(LogicalTimestamp term);
 
-	LogEntry getEntry(Long index);
+  LogEntry getEntry(Long index);
 
-	long commitedIndex();
+  long commitedIndex();
 
+  void setMemberLog(String memberId, MemberLog memberLog) ;
+  
+  MemberLog getMemberLog(String memberId) ;
 }

@@ -22,6 +22,7 @@ import io.scalecube.services.leader.election.api.Leader;
 import io.scalecube.services.leader.election.api.LeaderElectionGossip;
 import io.scalecube.services.leader.election.api.LeaderElectionService;
 import io.scalecube.services.leader.election.api.LogicalTimestamp;
+import io.scalecube.services.leader.election.api.MemberLog;
 import io.scalecube.services.leader.election.api.RaftLog;
 import io.scalecube.services.leader.election.api.VoteRequest;
 import io.scalecube.services.leader.election.api.VoteResponse;
@@ -156,18 +157,24 @@ public class RaftLeaderElection implements LeaderElectionService {
       List<ServiceInstance> services = findPeersServiceInstances();
 
       services.forEach(instance -> {
+        if (raftLog.getMemberLog(instance.memberId()) == null) {
+          raftLog.setMemberLog(instance.memberId(), new MemberLog());
+        }
         LOGGER.debug("member: [{}] sending heartbeat: [{}].", this.memberId, instance.memberId());
         try {
-          dispatcher.invoke(composeRequest("heartbeat",
-              new HeartbeatRequest(raftLog.currentTerm().toBytes(), this.memberId)), instance)
+          dispatcher.invoke(HeartbeatRequest.builder()
+                .term(raftLog.currentTerm())
+                .memberId(this.memberId)
+                .nextIndex(raftLog.getMemberLog(instance.memberId()).logIndex())
+                .build(), instance)
+          
               .whenComplete((success, error) -> {
                 HeartbeatResponse response = success.data();
-                LogicalTimestamp term = LogicalTimestamp.fromBytes(response.term());
 
-                if (raftLog.currentTerm().isBefore(term)) {
+                if (raftLog.currentTerm().isBefore(response.term())) {
                   LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId,
-                      raftLog.currentTerm(), term);
-                  raftLog.currentTerm(term);
+                      raftLog.currentTerm(), response.term());
+                  raftLog.currentTerm(response.term());
                 }
               });
         } catch (Exception e) {

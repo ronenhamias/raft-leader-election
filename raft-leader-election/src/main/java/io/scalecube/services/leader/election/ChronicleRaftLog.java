@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import io.scalecube.services.leader.election.api.LogEntry;
 import io.scalecube.services.leader.election.api.LogicalClock;
 import io.scalecube.services.leader.election.api.LogicalTimestamp;
+import io.scalecube.services.leader.election.api.MemberLog;
 import io.scalecube.services.leader.election.api.RaftLog;
 import net.openhft.chronicle.map.ChronicleMap;
 import net.openhft.chronicle.map.ChronicleMapBuilder;
@@ -31,19 +32,19 @@ public class ChronicleRaftLog implements RaftLog {
 
   private ChronicleMap<Long, LogEntry> log;
 
-  private ChronicleMap<String, LogMetadata> store;
+  private ChronicleMap<String, Object> store;
 
   public static class Builder {
 
     public final ChronicleMapBuilder<Long, LogEntry> log;
 
-    private ChronicleMapBuilder<String, LogMetadata> store;
+    private ChronicleMapBuilder<String, Object> store;
 
     private File directory;
 
     private Builder() {
       log = ChronicleMap.of(Long.class, LogEntry.class).minSegments(512);
-      store = ChronicleMap.of(String.class, LogMetadata.class).minSegments(512);
+      store = ChronicleMap.of(String.class, Object.class).minSegments(512);
       store.entries(1).averageKeySize(14).averageValueSize(100);
     }
 
@@ -102,7 +103,7 @@ public class ChronicleRaftLog implements RaftLog {
     return new Builder();
   }
 
-  private ChronicleRaftLog(ChronicleMap<Long, LogEntry> log, ChronicleMap<String, LogMetadata> store)
+  private ChronicleRaftLog(ChronicleMap<Long, LogEntry> log, ChronicleMap<String, Object> store)
       throws IOException {
     this.log = log;
     this.store = store;
@@ -148,7 +149,7 @@ public class ChronicleRaftLog implements RaftLog {
   }
 
   private void readSnapshoot() {
-    LogMetadata metadata = this.store.get(SNAPSHOOT);
+    LogMetadata metadata = (LogMetadata) this.store.get(SNAPSHOOT);
     this.currentTerm.set(LogicalTimestamp.fromLong(metadata.term()));
     this.clock = new LogicalClock(LogicalTimestamp.fromLong(metadata.term()));
     this.commitedIndex.set(metadata.commitedIndex());
@@ -160,4 +161,13 @@ public class ChronicleRaftLog implements RaftLog {
     return log.get(index);
   }
 
+  @Override
+  public void setMemberLog(String memberId, MemberLog memberLog) {
+    this.store.put(memberId, memberLog);
+  }
+
+  @Override
+  public MemberLog getMemberLog(String memberId) {
+    return (MemberLog) this.store.get(memberId);
+  }
 }

@@ -12,16 +12,16 @@ public class HeartbeatResponse {
   private final byte[] term;
 
   private final String memberId;
-  
+
   public HeartbeatResponse(String memberId, byte[] term) {
     this.term = term;
     this.memberId = memberId;
   }
 
-  public byte[] term() {
-    return term;
+  public LogicalTimestamp term() {
+    return LogicalTimestamp.fromBytes(term);
   }
-  
+
   public String memberId() {
     return memberId;
   }

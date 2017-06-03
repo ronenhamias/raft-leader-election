@@ -9,14 +9,14 @@ import java.util.concurrent.CompletableFuture;
 public interface LeaderElectionService {
 
   public static final String SERVICE_NAME = "scalecube-leader-election";
- 
+
   @ServiceMethod("leader")
   public CompletableFuture<Leader> leader();
 
   @ServiceMethod("heartbeat")
   CompletableFuture<HeartbeatResponse> onHeartbeat(HeartbeatRequest request);
-  
+
   @ServiceMethod("vote")
   CompletableFuture<VoteResponse> onRequestVote(VoteRequest request);
-  
+
 }
