@@ -35,11 +35,17 @@ public class ChronicleRaftLog implements RaftLog {
 
   private ChronicleMap<String, Object> store;
 
+  private String memberId;
+
   public static class Builder {
 
-    public final ChronicleMapBuilder<Long, LogEntry> log;
+    private static final String THIS = "this";
 
-    private ChronicleMapBuilder<String, Object> store;
+    private final ChronicleMapBuilder<Long, LogEntry> log;
+
+    private final ChronicleMapBuilder<String, Object> store;
+
+    private String memberId = THIS;
 
     private File directory;
 
@@ -60,6 +66,12 @@ public class ChronicleRaftLog implements RaftLog {
       return this;
     }
 
+    public Builder memberId(String memberId) {
+      checkNotNull(memberId);
+      this.memberId = memberId;
+      return this;
+    }
+
     public Builder persistedTo(File directory) {
       checkNotNull(directory);
       checkArgument(directory.isDirectory());
@@ -69,7 +81,7 @@ public class ChronicleRaftLog implements RaftLog {
 
     public ChronicleRaftLog build() throws IOException {
       if (directory != null) {
-        return createPersistentStore();
+        return createPersistentStore(memberId);
       } else {
         return createOffHeap();
       }
@@ -84,18 +96,18 @@ public class ChronicleRaftLog implements RaftLog {
      * @throws IOException
      */
     private ChronicleRaftLog createOffHeap() throws IOException {
-      return new ChronicleRaftLog(log.create(), store.create());
+      return new ChronicleRaftLog(THIS, log.create(), store.create());
     }
 
-    private ChronicleRaftLog createPersistentStore() throws IOException {
+    private ChronicleRaftLog createPersistentStore(String memberId) throws IOException {
       Path dir = directory.toPath();
       if (!directory.exists()) {
         dir.toFile().mkdirs();
       }
-      File logFile = Paths.get(dir.toString(), "/.log").toFile();
-      File storeFile = Paths.get(dir.toString(), "/.index").toFile();
+      File logFile = Paths.get(dir.toString(), "/" + memberId + ".data").toFile();
+      File storeFile = Paths.get(dir.toString(), "/" + memberId + ".index").toFile();
 
-      return new ChronicleRaftLog(log.createPersistedTo(logFile), store.createPersistedTo(storeFile));
+      return new ChronicleRaftLog(memberId, log.createPersistedTo(logFile), store.createPersistedTo(storeFile));
     }
 
   }
@@ -104,10 +116,11 @@ public class ChronicleRaftLog implements RaftLog {
     return new Builder();
   }
 
-  private ChronicleRaftLog(ChronicleMap<Long, LogEntry> log, ChronicleMap<String, Object> store)
+  private ChronicleRaftLog(String memberId, ChronicleMap<Long, LogEntry> log, ChronicleMap<String, Object> store)
       throws IOException {
     this.log = log;
     this.store = store;
+    this.memberId = memberId;
     if (this.store.containsKey(SNAPSHOOT)) {
       readSnapshoot();
     }
@@ -146,7 +159,7 @@ public class ChronicleRaftLog implements RaftLog {
   }
 
   private void snapshoot() {
-    store.put(SNAPSHOOT, new LogMetadata(index.get(), commitedIndex.get(), currentTerm.get().toLong()));
+    store.put(this.memberId, new LogMetadata(index.get(), commitedIndex.get(), currentTerm.get().toLong()));
   }
 
   private void readSnapshoot() {
@@ -165,13 +178,13 @@ public class ChronicleRaftLog implements RaftLog {
 
   @Override
   public void append(LogEntry[] entries) {
-    for(int i=0; i<entries.length ; i++){
+    for (int i = 0; i < entries.length; i++) {
       log.put(index.getAndIncrement(), entries[i]);
     }
     this.snapshoot();
-    
+
   }
-  
+
   @Override
   public LogEntry getEntry(Long index) {
     return log.get(index);
@@ -190,9 +203,9 @@ public class ChronicleRaftLog implements RaftLog {
   @Override
   public Optional<LogEntry[]> replicateEntries(String memberId) {
     if (this.getMemberLog(memberId) != null) {
-      int batchSize = (int) (this.index() - getMemberLog(memberId).logIndex);
+      int batchSize = (int) (this.index() - getMemberLog(memberId).logIndex());
       LogEntry[] entries = new LogEntry[batchSize];
-      if(batchSize > 0) {
+      if (batchSize > 0) {
         for (Integer x = 0, i = (int) getMemberLog(memberId).logIndex(); i < this.index(); i++, x++) {
           entries[x] = this.log.get(i.longValue());
         }
@@ -200,5 +213,22 @@ public class ChronicleRaftLog implements RaftLog {
       return Optional.of(entries);
     }
     return Optional.empty(); // nothing to replicate.
+  }
+
+  @Override
+  public long getLastLogTerm() {
+    LogMetadata meta = ((LogMetadata) this.store.get(memberId));
+    if(meta != null) {
+      return meta.term();
+    } else {
+      return 0;
+    }
+  }
+
+  @Override
+  public void decrementIndex(String memberId) {
+    LogMetadata meta = ((LogMetadata) this.store.get(memberId));
+    LogMetadata newMeta = LogMetadata.withIndex(meta, meta.index() - 1);
+    this.store.put(memberId, newMeta);
   }
 }

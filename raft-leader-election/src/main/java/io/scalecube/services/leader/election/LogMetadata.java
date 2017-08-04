@@ -28,4 +28,8 @@ public class LogMetadata implements Serializable {
   public long index() {
     return index;
   }
+
+  public static LogMetadata withIndex(LogMetadata meta, long newIndex) {
+    return new LogMetadata(newIndex, meta.term, meta.commitedIndex);
+  }
 }

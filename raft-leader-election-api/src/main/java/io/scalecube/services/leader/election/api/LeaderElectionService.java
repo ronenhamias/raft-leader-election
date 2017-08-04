@@ -14,7 +14,7 @@ public interface LeaderElectionService {
   public CompletableFuture<Leader> leader();
 
   @ServiceMethod("heartbeat")
-  CompletableFuture<HeartbeatResponse> onHeartbeat(HeartbeatRequest request);
+  CompletableFuture<AppendEntriesResponse> appendEntries(AppendEntriesRequest request);
 
   @ServiceMethod("vote")
   CompletableFuture<VoteResponse> onRequestVote(VoteRequest request);
