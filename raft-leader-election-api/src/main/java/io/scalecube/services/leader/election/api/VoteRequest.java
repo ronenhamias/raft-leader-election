@@ -2,6 +2,12 @@ package io.scalecube.services.leader.election.api;
 
 public class VoteRequest {
 
+  @Override
+  public String toString() {
+    return "VoteRequest [term=" + term + ", candidateId=" + candidateId + ", lastLogIndex=" + lastLogIndex
+        + ", lastLogTerm=" + lastLogTerm + "]";
+  }
+
   private final long term;
 
   private final String candidateId;

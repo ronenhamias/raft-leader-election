@@ -63,6 +63,8 @@ public class RaftLeaderElection implements LeaderElectionService {
 
   private Members members;
 
+  private long electionTimeout;
+
   public RaftLeaderElection(Config config) {
     this.raftLogBuilder = config;
   }
@@ -72,7 +74,7 @@ public class RaftLeaderElection implements LeaderElectionService {
     this.memberId = microservices.cluster().member().id();
     this.raftLogBuilder.builder().memberId(memberId);
     this.raftLog = this.raftLogBuilder.builder().build();
-
+    this.electionTimeout = this.raftLogBuilder.electionTimeout();
     this.heartbeatInterval = this.raftLogBuilder.heartbeatInterval();
     this.timeout = calculateTimeout(this.raftLogBuilder.timeout());
 
@@ -89,13 +91,13 @@ public class RaftLeaderElection implements LeaderElectionService {
     this.stateMachine.on(State.CANDIDATE, becomeCandidate());
     this.stateMachine.on(State.LEADER, becomeLeader());
 
-    this.timeoutScheduler = new JobScheduler(onHeartbeatNotRecived());
-    this.heartbeatScheduler = new JobScheduler(sendAppendEntriesRequest());
-    
     this.raftLog.nextTerm();
 
     this.dispatcher = microservices.dispatcher().create();
     this.stateMachine.transition(State.FOLLOWER, raftLog.currentTerm());
+    
+    this.timeoutScheduler = new JobScheduler(onHeartbeatNotRecived());
+    this.heartbeatScheduler = new JobScheduler(sendAppendEntriesRequest());
   }
 
   private int calculateTimeout(int timeout) {
@@ -162,6 +164,9 @@ public class RaftLeaderElection implements LeaderElectionService {
       LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId,
           raftLog.currentTerm(), request.prevLogTerm());
       raftLog.currentTerm(request.prevLogTerm());
+      if (!stateMachine.currentState().equals(State.CANDIDATE)) {
+        stateMachine.transition(State.FOLLOWER, request.prevLogTerm());
+      }
     }
 
     if (!stateMachine.currentState().equals(State.FOLLOWER)) {
@@ -186,36 +191,31 @@ public class RaftLeaderElection implements LeaderElectionService {
   }
 
   /*
-   * 1. Reply false if term < currentTerm (§5.1) 2. If votedFor is null or candidateId, and candidate’s log is at
-   * least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
+   * 1. Reply false if term < currentTerm (§5.1) 2. If votedFor is null or candidateId, and candidates log is at
+   * least as up-to-date as receivers log, grant vote (§5.2, §5.4)
    */
   @Override
   public CompletableFuture<VoteResponse> onRequestVote(VoteRequest request) {
 
     LogicalTimestamp term = request.term();
-    LOGGER.info("raftLog.currentTerm({}).isBefore({}) {}" ,raftLog.currentTerm().toLong(),term.toLong(), raftLog.currentTerm().isBefore(term));
-    LOGGER.info("request.lastLogIndex({}) <= raftLog.index({}): {}" ,request.lastLogIndex(), raftLog.index(), (request.lastLogIndex() <= raftLog.index()));
-    LOGGER.info("request.lastLogTerm({}) >= raftLog.lastLogTerm({}): {}" ,request.lastLogTerm().toLong(),term.toLong(), raftLog.lastLogTerm(), (request.lastLogTerm().toLong() >= raftLog.lastLogTerm()));
     
-    boolean voteGranted = raftLog.currentTerm().isBefore(term)
-        && request.lastLogIndex() <= raftLog.index()
-        && request.lastLogTerm().toLong() >= raftLog.lastLogTerm();
-
-    LOGGER.info("member [{}:{}] recived vote request: [{}] voteGranted: [{}].", this.memberId,
-        stateMachine.currentState(), request, voteGranted);
-
-    if (voteGranted) {
-      LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId,
-          raftLog.currentTerm(), term);
-      raftLog.currentTerm(term);
-    }
+    boolean termCheck = raftLog.currentTerm().isBefore(term);
+    boolean logIsUpToDate = logIsUpToDate(request.lastLogIndex(),request.lastLogTerm().toLong());
+    
+    boolean voteGranted = termCheck && logIsUpToDate;
+    
+    LOGGER.info("member [{}:{}] recived vote request: [{}] voteGranted: [{} term pass:{} log pass:{}].", this.memberId,
+        stateMachine.currentState(), request, voteGranted,termCheck,logIsUpToDate);
 
     return CompletableFuture.completedFuture(
         new VoteResponse(voteGranted, this.memberId));
   }
 
+  private boolean logIsUpToDate(long lastLogIndex, long lastLogTerm) {
+    return lastLogIndex <= raftLog.index() && lastLogTerm >= raftLog.lastLogTerm();
+  }
 
-
+  
   /**
    * find all leader election services that are remote and send current term to all of them.
    * 
@@ -289,7 +289,7 @@ public class RaftLeaderElection implements LeaderElectionService {
             raftLog.index())), instance)
             .whenComplete((success, error) -> {
               VoteResponse vote = success.data();
-              LOGGER.info("member: [{}] recived vote response: [{}].", this.memberId, vote);
+              LOGGER.info("member: [{}] recived vote from [{}] response: [{}].", this.memberId,vote.memberId(), vote);
               if (vote.granted()) {
                 quorum.collect(instance.memberId(), vote);
               }
@@ -301,7 +301,7 @@ public class RaftLeaderElection implements LeaderElectionService {
       }
     });
 
-    quorum.quorum(5, TimeUnit.SECONDS).whenComplete((response, error) -> {
+    quorum.quorum(electionTimeout, TimeUnit.MILLISECONDS).whenComplete((response, error) -> {
       if (response != null) {
         stateMachine.transition(State.LEADER, raftLog.currentTerm());
         LOGGER.info("member: [{}] was elected - transition to state leader with term[{}].", this.memberId, raftLog.currentTerm());
@@ -319,7 +319,7 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return
    */
-  private synchronized Consumer becomeLeader() {
+  private Consumer becomeLeader() {
     return leader -> {
       
       LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
@@ -347,10 +347,11 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return
    */
-  private synchronized Consumer becomeCandidate() {
-    raftLog.nextTerm();
+  private Consumer becomeCandidate() {
+   
     
     return election -> {
+      raftLog.nextTerm();
       heartbeatScheduler.stop();
       LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       sendElectionCampaign();
@@ -364,7 +365,7 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return
    */
-  private synchronized Consumer becomeFollower() {
+  private Consumer becomeFollower() {
     return follower -> {
       LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       heartbeatScheduler.stop();
