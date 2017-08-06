@@ -1,6 +1,5 @@
 package io.scalecube.services.leader.election.api;
 
-import java.util.Optional;
 
 public interface RaftLog {
 
@@ -10,11 +9,6 @@ public interface RaftLog {
 
   long commitedIndex();
   
-  long getLastLogTerm();
- 
-  LogicalTimestamp nextTerm();
-  
-
   void append(LogEntry entry);
 
   void append(LogEntry[] entries);
@@ -23,15 +17,13 @@ public interface RaftLog {
 
   void currentTerm(LogicalTimestamp term);
 
-  LogEntry getEntry(Long index);
-  
-  void setMemberLog(String memberId, MemberLog memberLog) ;
-  
-  MemberLog getMemberLog(String memberId) ;
+  LogEntry entry(long index);
 
-  Optional<LogEntry[]> replicateEntries(String memberId);
+  LogEntry[] entries(long fromIndex);
 
-  void decrementIndex(String memberId);
+  long lastLogTerm();
 
+  LogicalTimestamp nextTerm();
+ 
 }
 

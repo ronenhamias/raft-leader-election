@@ -17,7 +17,7 @@ public class LeaderElectionMain {
    * @param args host and port for seed node.
    * @throws IOException
    */
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) throws Exception {
 
     if (args.length < 2) {
       System.out.println("the application paramters must set with seed node address ");
@@ -26,15 +26,15 @@ public class LeaderElectionMain {
     RaftLeaderElection leaderElection1 = new RaftLeaderElection(new Config(
         ChronicleRaftLog.builder()
             .entries(1)
+            
             .averageValueSize(200)
-            .persistedTo(new File("./db"))
-            .build()));
+            .persistedTo(new File("./db"))));
 
     Microservices node1 = Microservices.builder()
         .seeds(Address.create(args[0], Integer.parseInt(args[1])))
         .services(leaderElection1).build();
 
-    leaderElection1.start(node1);
+    leaderElection1.start();
   }
 
 }

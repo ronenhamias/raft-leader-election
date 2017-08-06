@@ -1,27 +1,15 @@
 package io.scalecube.services.leader.election;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.scalecube.services.Microservices;
 import io.scalecube.services.ServiceCall;
 import io.scalecube.services.ServiceHeaders;
 import io.scalecube.services.ServiceInstance;
-import io.scalecube.services.annotations.ServiceProxy;
+import io.scalecube.services.annotations.Inject;
+import io.scalecube.services.leader.election.api.AppendEntriesRequest;
+import io.scalecube.services.leader.election.api.AppendEntriesResponse;
 import io.scalecube.services.leader.election.api.AppendStatus;
 import io.scalecube.services.leader.election.api.EntryRequest;
 import io.scalecube.services.leader.election.api.EntryResponse;
-import io.scalecube.services.leader.election.api.AppendEntriesRequest;
-import io.scalecube.services.leader.election.api.AppendEntriesResponse;
 import io.scalecube.services.leader.election.api.Leader;
 import io.scalecube.services.leader.election.api.LeaderElectionGossip;
 import io.scalecube.services.leader.election.api.LeaderElectionService;
@@ -34,41 +22,65 @@ import io.scalecube.services.leader.election.state.State;
 import io.scalecube.services.leader.election.state.StateMachine;
 import io.scalecube.transport.Message;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
 public class RaftLeaderElection implements LeaderElectionService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(LeaderElectionService.class);
 
-  private final StateMachine stateMachine;
+  private StateMachine stateMachine;
 
+  @Inject
   private Microservices microservices;
-
-  private final RaftLog raftLog;
-
-  private final JobScheduler timeoutScheduler;
-
-  private final JobScheduler heartbeatScheduler;
 
   private ServiceCall dispatcher;
 
+  private final Config raftLogBuilder;
+
+  private RaftLog raftLog;
+
+  private JobScheduler timeoutScheduler;
+
+  private JobScheduler heartbeatScheduler;
+
   private String memberId;
 
-  private final int timeout;
+  private int timeout;
 
   private final AtomicReference<String> currentLeader = new AtomicReference<String>("");
 
-  private final int heartbeatInterval;
+  private int heartbeatInterval;
+
+  private Members members;
 
   public RaftLeaderElection(Config config) {
-    this.raftLog = config.raftLog();
-    this.raftLog.nextTerm();
-    this.heartbeatInterval = config.heartbeatInterval();
+    this.raftLogBuilder = config;
+  }
 
-    this.timeout = calculateTimeout(config.timeout());
+  public void start() throws Exception {
+    this.members = Members.create();
+    this.memberId = microservices.cluster().member().id();
+    this.raftLogBuilder.builder().memberId(memberId);
+    this.raftLog = this.raftLogBuilder.builder().build();
+
+    this.heartbeatInterval = this.raftLogBuilder.heartbeatInterval();
+    this.timeout = calculateTimeout(this.raftLogBuilder.timeout());
 
     this.stateMachine = StateMachine.builder()
         .init(State.INACTIVE)
         .addTransition(State.INACTIVE, State.FOLLOWER)
         .addTransition(State.FOLLOWER, State.CANDIDATE)
+        .addTransition(State.CANDIDATE, State.FOLLOWER)
         .addTransition(State.CANDIDATE, State.LEADER)
         .addTransition(State.LEADER, State.FOLLOWER)
         .build();
@@ -78,7 +90,12 @@ public class RaftLeaderElection implements LeaderElectionService {
     this.stateMachine.on(State.LEADER, becomeLeader());
 
     this.timeoutScheduler = new JobScheduler(onHeartbeatNotRecived());
-    this.heartbeatScheduler = new JobScheduler(sendHeartbeat());
+    this.heartbeatScheduler = new JobScheduler(sendAppendEntriesRequest());
+    
+    this.raftLog.nextTerm();
+
+    this.dispatcher = microservices.dispatcher().create();
+    this.stateMachine.transition(State.FOLLOWER, raftLog.currentTerm());
   }
 
   private int calculateTimeout(int timeout) {
@@ -94,12 +111,7 @@ public class RaftLeaderElection implements LeaderElectionService {
     return CompletableFuture.completedFuture(new Leader(this.memberId, this.currentLeader.get()));
   }
 
-  public void start(Microservices seed) {
-    this.microservices = seed;
-    this.memberId = microservices.cluster().member().id();
-    this.dispatcher = microservices.dispatcher().create();
-    this.stateMachine.transition(State.FOLLOWER, raftLog.currentTerm());
-  }
+
 
   private Consumer onHeartbeatNotRecived() {
     return toCandidate -> {
@@ -118,7 +130,7 @@ public class RaftLeaderElection implements LeaderElectionService {
       raftLog.append(request.data());
 
       // append to the members log.
-      sendHeartbeat();
+      sendAppendEntriesRequest();
 
       return CompletableFuture.completedFuture(new EntryResponse(
           AppendStatus.AcceptedNotCommited,
@@ -131,6 +143,16 @@ public class RaftLeaderElection implements LeaderElectionService {
     }
   }
 
+  /*
+   * 1. Reply false if term < currentTerm (§5.1) 2. Reply false if log doesn’t contain an entry at prevLogIndex whose
+   * term matches prevLogTerm (§5.3) 3. If an existing entry conflicts with a new one (same index but different terms),
+   * delete the existing entry and all that follow it (§5.3) 4. Append any new entries not already in the log 5. If
+   * leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry) Append Entries RPC 1.
+   * Reply false if term < currentTerm (§5.1) 2. Reply false if log doesn’t contain an entry at prevLogIndex whose
+   * term matches prevLogTerm (§5.3) 3. If an existing entry conflicts with a new one (same index but different terms),
+   * delete the existing entry and all that follow it (§5.3) 4. Append any new entries not already in the log 5. If
+   * leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
+   */
   @Override
   public CompletableFuture<AppendEntriesResponse> appendEntries(AppendEntriesRequest request) {
     LOGGER.debug("member [{}] recived heartbeat request: [{}]", this.memberId, request);
@@ -149,31 +171,40 @@ public class RaftLeaderElection implements LeaderElectionService {
     }
 
     this.currentLeader.set(request.leaderId());
-    
-    // consistency check did you have in the last log index an entry with this term?  
-    if(request.entries() !=null && request.entries().length > 0) {
+
+    // consistency check did you have in the last log index an entry with this term?
+    if (request.entries() != null && request.entries().length > 0) {
       this.raftLog.append(request.entries());
-    }  
-  
-    
+    }
+
+
     return CompletableFuture.completedFuture(new AppendEntriesResponse(
-        this.memberId, 
+        this.memberId,
         this.raftLog.currentTerm().toLong(),
         this.raftLog.index(),
-        this.raftLog.getLastLogTerm() == request.prevLogTerm().toLong()
-        ));
+        this.raftLog.lastLogTerm() == request.prevLogTerm().toLong()));
   }
 
+  /*
+   * 1. Reply false if term < currentTerm (§5.1) 2. If votedFor is null or candidateId, and candidate’s log is at
+   * least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
+   */
   @Override
   public CompletableFuture<VoteResponse> onRequestVote(VoteRequest request) {
 
     LogicalTimestamp term = request.term();
+    LOGGER.info("raftLog.currentTerm({}).isBefore({}) {}" ,raftLog.currentTerm().toLong(),term.toLong(), raftLog.currentTerm().isBefore(term));
+    LOGGER.info("request.lastLogIndex({}) <= raftLog.index({}): {}" ,request.lastLogIndex(), raftLog.index(), (request.lastLogIndex() <= raftLog.index()));
+    LOGGER.info("request.lastLogTerm({}) >= raftLog.lastLogTerm({}): {}" ,request.lastLogTerm().toLong(),term.toLong(), raftLog.lastLogTerm(), (request.lastLogTerm().toLong() >= raftLog.lastLogTerm()));
+    
+    boolean voteGranted = raftLog.currentTerm().isBefore(term)
+        && request.lastLogIndex() <= raftLog.index()
+        && request.lastLogTerm().toLong() >= raftLog.lastLogTerm();
 
-    boolean voteGranted = raftLog.currentTerm().isBefore(term);
     LOGGER.info("member [{}:{}] recived vote request: [{}] voteGranted: [{}].", this.memberId,
         stateMachine.currentState(), request, voteGranted);
 
-    if (raftLog.currentTerm().isBefore(term)) {
+    if (voteGranted) {
       LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId,
           raftLog.currentTerm(), term);
       raftLog.currentTerm(term);
@@ -190,47 +221,51 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return consumer.
    */
-  private Consumer sendHeartbeat() {
+  private Consumer sendAppendEntriesRequest() {
 
     return heartbeat -> {
 
       List<ServiceInstance> services = findPeersServiceInstances();
-      CountDownLatch commitConcensus = new CountDownLatch((services.size() / 2) +1);
+      CountDownLatch commitConcensus = new CountDownLatch((services.size() / 2) + 1);
       services.forEach(instance -> {
-        if (raftLog.getMemberLog(instance.memberId()) == null) {
-          raftLog.setMemberLog(instance.memberId(), new MemberLog());
-        }
+
+        members.set(instance.memberId(), MemberLog.create(
+            raftLog.index() + 1,
+            raftLog.currentTerm().toLong(),
+            raftLog.commitedIndex()));
+
         LOGGER.debug("member: [{}] sending heartbeat: [{}].", this.memberId, instance.memberId());
         try {
           dispatcher.invoke(AppendEntriesRequest.builder()
               .term(raftLog.currentTerm())
-              .memberId(this.memberId)
+              .leaderId(this.memberId)
               .leaderTerm(raftLog.currentTerm().toLong())
-              .prevLogIndex(raftLog.getMemberLog(instance.memberId()).logIndex())
+              .prevLogIndex(members.get(instance.memberId()).index())
               .prevLogTerm(raftLog.currentTerm().toLong())
-              .entries(raftLog.replicateEntries(instance.memberId()).get())
+              .entries(raftLog.entries(members.get(instance.memberId()).index()))
               .build(), instance)
 
               .whenComplete((success, error) -> {
                 AppendEntriesResponse response = success.data();
 
-                if(response.success()){
+                if (response.success()) {
                   // increment accepted entry for member
-                  
+
                   // do we have commit concensus? yes increment commit index.
-                  
-                } else {
-                  this.raftLog.decrementIndex(response.memberId());
+
+                } else if (response.lastLogIndex() < raftLog.index()) {
+                  this.members.set(response.memberId(),
+                      members.updateIndex(response.memberId(), response.lastLogIndex()));
                 }
-                
+
                 if (raftLog.currentTerm().isBefore(response.term())) {
                   LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId,
                       raftLog.currentTerm(), response.term());
                   raftLog.currentTerm(response.term());
                 }
               });
-          
-          
+
+
         } catch (Exception e) {
           // TODO Auto-generated catch block
           e.printStackTrace();
@@ -242,22 +277,21 @@ public class RaftLeaderElection implements LeaderElectionService {
 
   private void sendElectionCampaign() {
     List<ServiceInstance> services = findPeersServiceInstances();
-    CountDownLatch consensus = new CountDownLatch((services.size() / 2));
+    Quorum<VoteResponse> quorum = Quorum.of((services.size() / 2));
 
     services.forEach(instance -> {
       try {
         LOGGER.info("member: [{}] sending vote request to: [{}].", this.memberId, instance.memberId());
         dispatcher.invoke(composeRequest("vote", new VoteRequest(
-              memberId,
-              raftLog.currentTerm().toLong(),
-              raftLog.getLastLogTerm(),
-              raftLog.index()
-              )), instance)
+            memberId,
+            raftLog.currentTerm().toLong(),
+            raftLog.lastLogTerm(),
+            raftLog.index())), instance)
             .whenComplete((success, error) -> {
               VoteResponse vote = success.data();
               LOGGER.info("member: [{}] recived vote response: [{}].", this.memberId, vote);
               if (vote.granted()) {
-                consensus.countDown();
+                quorum.collect(instance.memberId(), vote);
               }
             });
 
@@ -267,12 +301,17 @@ public class RaftLeaderElection implements LeaderElectionService {
       }
     });
 
-    try {
-      consensus.await(3, TimeUnit.SECONDS);
-      stateMachine.transition(State.LEADER, raftLog.currentTerm());
-    } catch (InterruptedException e) {
-      stateMachine.transition(State.FOLLOWER, raftLog.currentTerm());
-    }
+    quorum.quorum(5, TimeUnit.SECONDS).whenComplete((response, error) -> {
+      if (response != null) {
+        stateMachine.transition(State.LEADER, raftLog.currentTerm());
+        LOGGER.info("member: [{}] was elected - transition to state leader with term[{}].", this.memberId, raftLog.currentTerm());
+      } else {
+        stateMachine.transition(State.FOLLOWER, raftLog.currentTerm());
+        LOGGER.info("member: [{}] failed to elect current term {}.", this.memberId, raftLog.currentTerm());
+      }
+    });
+
+
   }
 
   /**
@@ -280,8 +319,9 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return
    */
-  private Consumer becomeLeader() {
+  private synchronized Consumer becomeLeader() {
     return leader -> {
+      
       LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       timeoutScheduler.stop();
       heartbeatScheduler.start(heartbeatInterval);
@@ -307,13 +347,13 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return
    */
-  private Consumer becomeCandidate() {
+  private synchronized Consumer becomeCandidate() {
+    raftLog.nextTerm();
+    
     return election -> {
-      LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       heartbeatScheduler.stop();
-      raftLog.nextTerm();
+      LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       sendElectionCampaign();
-
       // spread the gossip about me as candidate.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.CANDIDATE));
     };
@@ -324,13 +364,13 @@ public class RaftLeaderElection implements LeaderElectionService {
    * 
    * @return
    */
-  private Consumer becomeFollower() {
+  private synchronized Consumer becomeFollower() {
     return follower -> {
       LOGGER.info("member: [{}] has become: [{}].", this.memberId, stateMachine.currentState());
       heartbeatScheduler.stop();
       timeoutScheduler.start(this.timeout);
 
-      // spread the gossip about me as follower.
+      // spread a gossip about me as follower.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.FOLLOWER));
     };
   }
@@ -343,14 +383,9 @@ public class RaftLeaderElection implements LeaderElectionService {
   }
 
   private List<ServiceInstance> findPeersServiceInstances() {
-    List<ServiceInstance> list = new ArrayList<>();
-    this.microservices.services().forEach(instance -> {
-      if (LeaderElectionService.SERVICE_NAME.equals(instance.serviceName()) && !instance.isLocal()) {
-        list.add(instance);
-      }
-    });
-
-    return list;
+    return this.microservices.services().stream()
+        .filter(instance -> (LeaderElectionService.SERVICE_NAME.equals(instance.serviceName()) && !instance.isLocal()))
+        .collect(Collectors.toList());
   }
 
   public void on(State state, Consumer func) {

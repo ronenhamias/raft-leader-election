@@ -24,7 +24,7 @@ public class AppendEntriesRequest {
       return this;
     }
 
-    public Builder memberId(String leaderId) {
+    public Builder leaderId(String leaderId) {
       this.leaderId = leaderId;
       return this;
     }
@@ -57,7 +57,7 @@ public class AppendEntriesRequest {
     public Message build() {
       
       return Message.builder()
-          .header(ServiceHeaders.SERVICE_REQUEST, LeaderElectionService.SERVICE_NAME)
+          .header(ServiceHeaders.SERVICE_REQUEST, "io.scalecube.services.leader.election.api.LeaderElectionService")
           .header(ServiceHeaders.METHOD, "heartbeat")
           .data(new AppendEntriesRequest(
               this.leaderId,

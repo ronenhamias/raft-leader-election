@@ -1,16 +1,17 @@
 package io.scalecube.services.leader.election;
 
-import io.scalecube.services.leader.election.api.RaftLog;
+import io.scalecube.services.leader.election.ChronicleRaftLog.Builder;
 
 public class Config {
 
 
-  private int heartbeatInterval = 300;
-  private int timeout = 1000;
-  private final RaftLog raftLog;
+  private int heartbeatInterval = 1000;
+  private int timeout = 3000;
+  
+  private final Builder builder;
 
-  public Config(RaftLog raftLog) {
-    this.raftLog = raftLog;
+  public Config(Builder builder) {
+    this.builder = builder;
   }
 
   public int timeout() {
@@ -21,7 +22,7 @@ public class Config {
     return heartbeatInterval;
   }
 
-  public RaftLog raftLog() {
-    return this.raftLog;
+  public Builder builder() {
+    return this.builder;
   }
 }

@@ -5,10 +5,10 @@ import io.scalecube.services.annotations.ServiceMethod;
 
 import java.util.concurrent.CompletableFuture;
 
-@Service(LeaderElectionService.SERVICE_NAME)
+@Service
 public interface LeaderElectionService {
 
-  public static final String SERVICE_NAME = "scalecube-leader-election";
+  String SERVICE_NAME = "io.scalecube.services.leader.election.api.LeaderElectionService";
 
   @ServiceMethod("leader")
   public CompletableFuture<Leader> leader();
