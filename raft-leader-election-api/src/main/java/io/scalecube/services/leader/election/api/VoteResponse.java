@@ -8,6 +8,7 @@ public class VoteResponse {
   }
 
   private boolean granted;
+  
   private String memberId;
 
   public VoteResponse(boolean granted, String memberId) {

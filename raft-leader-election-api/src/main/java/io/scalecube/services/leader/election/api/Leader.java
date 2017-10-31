@@ -2,7 +2,7 @@ package io.scalecube.services.leader.election.api;
 
 public class Leader {
 
-  
+
 
   @Override
   public String toString() {
@@ -17,11 +17,11 @@ public class Leader {
     this.leaderId = leaderId;
   }
 
-  public String memberId(){
+  public String memberId() {
     return memberId;
   }
-  
-  public String leaderId(){
+
+  public String leaderId() {
     return leaderId;
   }
 }

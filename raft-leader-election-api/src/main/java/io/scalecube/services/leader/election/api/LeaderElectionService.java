@@ -8,15 +8,18 @@ import java.util.concurrent.CompletableFuture;
 @Service(LeaderElectionService.SERVICE_NAME)
 public interface LeaderElectionService {
 
-  public static final String SERVICE_NAME = "scalecube-leader-election";
- 
+  String SERVICE_NAME = "leader-election-service";
+
   @ServiceMethod("leader")
   public CompletableFuture<Leader> leader();
 
   @ServiceMethod("heartbeat")
-  CompletableFuture<HeartbeatResponse> onHeartbeat(HeartbeatRequest request);
-  
+  CompletableFuture<AppendEntriesResponse> appendEntries(AppendEntriesRequest request);
+
   @ServiceMethod("vote")
   CompletableFuture<VoteResponse> onRequestVote(VoteRequest request);
+
+  @ServiceMethod("append")
+  CompletableFuture<EntryResponse> append(EntryRequest request);
   
 }
