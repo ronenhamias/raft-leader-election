@@ -19,15 +19,15 @@ public class RaftLeaderElectionTest {
   @Test
   public void test() throws InterruptedException {
   
-    Microservices seed = Microservices.builder().build();
+    Microservices seed = Microservices.builder().startAwait();
 
     RaftLeaderElection leaderElection1 = new RaftLeaderElection(new Config());
     RaftLeaderElection leaderElection2 = new RaftLeaderElection(new Config());
     RaftLeaderElection leaderElection3 = new RaftLeaderElection(new Config());
     
-    Microservices node1 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection1).build();
-    Microservices node2 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection2).build();
-    Microservices node3 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection3).build();
+    Microservices node1 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection1).startAwait();
+    Microservices node2 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection2).startAwait();
+    Microservices node3 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection3).startAwait();
     
     leaderElection1.start(node1);
     leaderElection2.start(node2);
@@ -46,13 +46,13 @@ public class RaftLeaderElectionTest {
     Thread.sleep(7000);
     
     
-    LeaderElectionService proxy = seed.proxy().api(LeaderElectionService.class).create();
+    LeaderElectionService proxy = seed.call().create().api(LeaderElectionService.class);
     
     CountDownLatch latch = new CountDownLatch(6);
     
     List<Leader> leaders = new ArrayList();
     for(int i =0 ; i < 6 ; i ++ ){
-      proxy.leader().whenComplete((success,error)->{
+      proxy.leader().doAfterSuccessOrError((success,error)->{
         latch.countDown();
         leaders.add(success);
       });

@@ -15,9 +15,9 @@ public class ConsumerMain {
     
     Microservices node1 = Microservices.builder()
         .seeds(Address.create(args[0], Integer.parseInt(args[1])))
-        .build();
+        .startAwait();
 
-    LeaderElectionService proxy = node1.proxy().api(LeaderElectionService.class).create();
+    LeaderElectionService proxy = node1.call().create().api(LeaderElectionService.class);
     
     node1.cluster().listenGossips()
       .filter(m->m.headers().containsKey(LeaderElectionGossip.TYPE))
@@ -29,15 +29,10 @@ public class ConsumerMain {
         
         // asking all leader elections nodes who is the leader and print.
         node1.services().forEach(action->{
-          proxy.leader().whenComplete((success,error)->{
+          proxy.leader().doAfterSuccessOrError((success,error)->{
             System.out.println(success);
           });
         });
-        
       });
-   
-    
-    
   }
-
 }

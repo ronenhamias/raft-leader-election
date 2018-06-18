@@ -2,8 +2,9 @@ package io.scalecube.services.leader.election;
 
 import io.scalecube.services.Microservices;
 import io.scalecube.services.ServiceCall;
-import io.scalecube.services.ServiceHeaders;
-import io.scalecube.services.ServiceInstance;
+import io.scalecube.services.ServiceEndpoint;
+import io.scalecube.services.ServiceReference;
+import io.scalecube.services.api.ServiceMessage;
 import io.scalecube.services.leader.election.api.HeartbeatRequest;
 import io.scalecube.services.leader.election.api.HeartbeatResponse;
 import io.scalecube.services.leader.election.api.Leader;
@@ -15,10 +16,13 @@ import io.scalecube.services.leader.election.clock.LogicalClock;
 import io.scalecube.services.leader.election.clock.LogicalTimestamp;
 import io.scalecube.services.leader.election.state.State;
 import io.scalecube.services.leader.election.state.StateMachine;
+import io.scalecube.transport.Address;
 import io.scalecube.transport.Message;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -77,14 +81,14 @@ public class RaftLeaderElection implements LeaderElectionService {
   }
   
   @Override
-  public CompletableFuture<Leader> leader() {
-    return CompletableFuture.completedFuture(new Leader(this.memberId, this.currentLeader.get()));
+  public Mono<Leader> leader() {
+    return Mono.just(new Leader(this.memberId, this.currentLeader.get()));
   }
   
   public void start(Microservices seed) {
     this.microservices = seed;
     this.memberId = microservices.cluster().member().id();
-    this.dispatcher = microservices.dispatcher().create();
+    this.dispatcher = microservices.call().create();
     this.stateMachine.transition(State.FOLLOWER, currentTerm.get()); 
   }
   
@@ -98,7 +102,7 @@ public class RaftLeaderElection implements LeaderElectionService {
   }
 
   @Override
-  public CompletableFuture<HeartbeatResponse> onHeartbeat(HeartbeatRequest request) {
+  public Mono<HeartbeatResponse> onHeartbeat(HeartbeatRequest request) {
     LOGGER.debug("member [{}] recived heartbeat request: [{}]", this.memberId, request);
     this.timeoutScheduler.reset(this.timeout);
     
@@ -116,11 +120,11 @@ public class RaftLeaderElection implements LeaderElectionService {
     
     this.currentLeader.set(request.memberId());
     
-    return CompletableFuture.completedFuture(new HeartbeatResponse(this.memberId,currentTerm.get().toBytes()));
+    return Mono.just(new HeartbeatResponse(this.memberId,currentTerm.get().toBytes()));
   }
 
   @Override
-  public CompletableFuture<VoteResponse> onRequestVote(VoteRequest request) {
+  public Mono<VoteResponse> onRequestVote(VoteRequest request) {
     
     LogicalTimestamp term = LogicalTimestamp.fromBytes(request.term());
     
@@ -132,8 +136,7 @@ public class RaftLeaderElection implements LeaderElectionService {
       currentTerm.set(term);
     }
     
-    return CompletableFuture.completedFuture(
-        new VoteResponse(voteGranted,this.memberId));
+    return Mono.just(new VoteResponse(voteGranted,this.memberId));
   }
 
   
@@ -147,17 +150,17 @@ public class RaftLeaderElection implements LeaderElectionService {
 
     return heartbeat -> {
    
-      List<ServiceInstance> services = findPeersServiceInstances();
+      List<ServiceReference> services = findPeersServiceInstances();
       
       services.forEach(instance -> {
-        LOGGER.debug("member: [{}] sending heartbeat: [{}].", this.memberId, instance.memberId());
+        LOGGER.debug("member: [{}] sending heartbeat: [{}].", this.memberId, instance.endpointId());
           try {
-            dispatcher.invoke(composeRequest("heartbeat",
-                new HeartbeatRequest(currentTerm.get().toBytes(),this.memberId)), instance)
-                .whenComplete((success, error) -> {
+            ServiceMessage request = composeRequest("heartbeat",new HeartbeatRequest(currentTerm.get().toBytes(),this.memberId));
+            Address address = Address.create(instance.host(), instance.port());
+            dispatcher.requestOne(request, HeartbeatRequest.class, address)
+              .doAfterSuccessOrError((success, error) -> {
                   HeartbeatResponse response = success.data();
                   LogicalTimestamp term = LogicalTimestamp.fromBytes(response.term());
-                  
                   if(currentTerm.get().isBefore(term)){
                     LOGGER.info("member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", this.memberId, currentTerm.get(),term);
                     currentTerm.set(term);
@@ -173,15 +176,17 @@ public class RaftLeaderElection implements LeaderElectionService {
   }
   
   private void sendElectionCampaign() {
-    List<ServiceInstance> services = findPeersServiceInstances();
+    List<ServiceReference> services = findPeersServiceInstances();
     CountDownLatch consensus = new CountDownLatch((services.size() / 2));
 
     services.forEach(instance -> {
       try {
-        LOGGER.info("member: [{}] sending vote request to: [{}].", this.memberId, instance.memberId());
-        dispatcher.invoke(composeRequest("vote", new VoteRequest(
-            currentTerm.get().toBytes(),
-            memberId)), instance).whenComplete((success, error) -> {
+        LOGGER.info("member: [{}] sending vote request to: [{}].", this.memberId, instance.endpointId());
+        ServiceMessage request = composeRequest("vote", new VoteRequest(currentTerm.get().toBytes(),
+            instance.endpointId()));
+        
+        dispatcher.requestOne(request, VoteRequest.class, Address.create(instance.host(), instance.port()))
+          .doAfterSuccessOrError((success, error) -> {
               VoteResponse vote = success.data();
               LOGGER.info("member: [{}] recived vote response: [{}].", this.memberId, vote);
               if (vote.granted()) {
@@ -261,27 +266,21 @@ public class RaftLeaderElection implements LeaderElectionService {
     };
   }
   
-  private Message composeRequest(String action, Object data) {
-    return Message.builder()
-        .header(ServiceHeaders.SERVICE_REQUEST, LeaderElectionService.SERVICE_NAME)
-        .header(ServiceHeaders.METHOD, action)
+  private ServiceMessage composeRequest(String action, Object data) {
+    return ServiceMessage.builder()
+        .header("service-request", LeaderElectionService.SERVICE_NAME)
+        .header("service-method", action)
         .data(data).build();
   }
 
-  private List<ServiceInstance> findPeersServiceInstances() {
-    List<ServiceInstance> list = new ArrayList<>();
-    this.microservices.services().forEach( instance-> {
-      if(LeaderElectionService.SERVICE_NAME.equals(instance.serviceName()) && !instance.isLocal()){
-        list.add(instance);
-      }      
-    });
-   
-    return list;
+  private List<ServiceReference> findPeersServiceInstances() {
+    return microservices.serviceRegistry()
+        .lookupService(filter->
+        filter.namespace().equals(LeaderElectionService.SERVICE_NAME)
+            );
   }
 
   public void on(State state, Consumer func) {
     stateMachine.on(state,func);
   }
-
- 
 }

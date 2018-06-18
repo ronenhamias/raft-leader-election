@@ -21,7 +21,7 @@ public class LeaderElectionMain {
 
     Microservices node1 = Microservices.builder()
         .seeds(Address.create(args[0], Integer.parseInt(args[1])))
-        .services(leaderElection1).build();
+        .services(leaderElection1).startAwait();
 
     leaderElection1.start(node1);
   }

@@ -3,6 +3,8 @@ package io.scalecube.services.leader.election.api;
 import io.scalecube.services.annotations.Service;
 import io.scalecube.services.annotations.ServiceMethod;
 
+import reactor.core.publisher.Mono;
+
 import java.util.concurrent.CompletableFuture;
 
 @Service(LeaderElectionService.SERVICE_NAME)
@@ -11,12 +13,12 @@ public interface LeaderElectionService {
   public static final String SERVICE_NAME = "scalecube-leader-election";
  
   @ServiceMethod("leader")
-  public CompletableFuture<Leader> leader();
+  public Mono<Leader> leader();
 
   @ServiceMethod("heartbeat")
-  CompletableFuture<HeartbeatResponse> onHeartbeat(HeartbeatRequest request);
+  Mono<HeartbeatResponse> onHeartbeat(HeartbeatRequest request);
   
   @ServiceMethod("vote")
-  CompletableFuture<VoteResponse> onRequestVote(VoteRequest request);
+  Mono<VoteResponse> onRequestVote(VoteRequest request);
   
 }

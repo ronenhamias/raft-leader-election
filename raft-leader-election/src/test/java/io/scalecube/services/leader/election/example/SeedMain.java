@@ -5,7 +5,7 @@ import io.scalecube.services.Microservices;
 public class SeedMain {
 
   public static void main(String[] args) {
-    Microservices seed = Microservices.builder().build();
+    Microservices seed = Microservices.builder().startAwait();
 
     System.out.println(seed.cluster().address());
   }

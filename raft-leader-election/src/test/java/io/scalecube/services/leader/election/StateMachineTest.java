@@ -10,7 +10,6 @@ public class StateMachineTest {
   @Test
   public void test() {
 
-    
     StateMachine sm = StateMachine.builder()
         .init(State.INACTIVE)
         .addTransition(State.INACTIVE, State.CANDIDATE)
