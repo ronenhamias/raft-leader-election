@@ -9,9 +9,12 @@ import reactor.core.publisher.Mono;
 
 public class GreetingServiceImpl extends RaftLeaderElection implements GreetingService {
 
+  private Microservices ms;
+
   @AfterConstruct
   public void start(Microservices ms) {
     super.start(ms);
+    this.ms = ms;
   }
 
   public GreetingServiceImpl(Config config) {
@@ -21,6 +24,21 @@ public class GreetingServiceImpl extends RaftLeaderElection implements GreetingS
   @Override
   public Mono<String> sayHello(String name) {
     return Mono.just("hello: " + name);
+  }
+
+  @Override
+  public void onBecomeLeader() {
+    System.out.println(ms.cluster().member().id() + " >>>>>>>    +++ onBecomeLeader +++");
+  }
+
+  @Override
+  public void onBecomeCandidate() {
+    System.out.println(ms.cluster().member().id() + " ?? onBecomeCandidate");
+  }
+
+  @Override
+  public void onBecomeFollower() {
+    System.out.println(ms.cluster().member().id() + " << onBecomeFollower");
   }
 
 }

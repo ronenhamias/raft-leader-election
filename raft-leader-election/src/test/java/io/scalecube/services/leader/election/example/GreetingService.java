@@ -7,9 +7,9 @@ import io.scalecube.services.leader.election.api.LeaderElectionService;
 import reactor.core.publisher.Mono;
 
 @Service("greetings")
-public interface GreetingService extends LeaderElectionService{
-  
+public interface GreetingService extends LeaderElectionService {
+
   @ServiceMethod
   Mono<String> sayHello(String name);
-  
-} 
+
+}

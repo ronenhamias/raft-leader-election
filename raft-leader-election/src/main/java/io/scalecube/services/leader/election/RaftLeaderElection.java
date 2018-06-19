@@ -27,6 +27,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -236,8 +237,11 @@ public abstract class RaftLeaderElection {
 
       // spread the gossip about me as a new leader.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.LEADER));
+      CompletableFuture.runAsync(()->onBecomeLeader());
     };
   }
+  
+  public abstract void onBecomeLeader(); 
 
   private Message newLeaderElectionGossip(State state) {
     return Message.builder()
@@ -263,8 +267,11 @@ public abstract class RaftLeaderElection {
 
       // spread the gossip about me as candidate.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.CANDIDATE));
+      CompletableFuture.runAsync(()->onBecomeCandidate());
     };
   }
+
+  public abstract void onBecomeCandidate();
 
   /**
    * node became follower when it initiates
@@ -279,8 +286,11 @@ public abstract class RaftLeaderElection {
 
       // spread the gossip about me as follower.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.FOLLOWER));
+      CompletableFuture.runAsync(()->onBecomeFollower());
     };
   }
+
+  public abstract void onBecomeFollower();
 
   private ServiceMessage composeRequest(String action, Object data) {
     return ServiceMessage.builder()

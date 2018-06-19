@@ -27,15 +27,6 @@ public class RaftLeaderElectionTest {
     Microservices node3 =
         Microservices.builder().seeds(seed.cluster().address()).services(leaderElection3).startAwait();
 
-    leaderElection1.on(State.LEADER, onLeader());
-    leaderElection1.on(State.FOLLOWER, onFollower());
-
-    leaderElection2.on(State.LEADER, onLeader());
-    leaderElection2.on(State.FOLLOWER, onFollower());
-
-    leaderElection3.on(State.LEADER, onLeader());
-    leaderElection3.on(State.FOLLOWER, onFollower());
-
     // wait for leader to be elected.
     Thread.sleep(7000);
 
@@ -47,16 +38,5 @@ public class RaftLeaderElectionTest {
     Thread.currentThread().join();
   }
 
-  private Consumer onFollower() {
-    return leader -> {
-      System.out.println("on state onFollower ");
-    };
-  }
-
-  private Consumer onLeader() {
-    return leader -> {
-      System.out.println("on state leader ");
-    };
-  }
-
+  
 }
