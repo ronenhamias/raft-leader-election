@@ -28,17 +28,17 @@ public class GreetingServiceImpl extends RaftLeaderElection implements GreetingS
 
   @Override
   public void onBecomeLeader() {
-    System.out.println(ms.cluster().member().id() + " >>>>>>>    +++ onBecomeLeader +++");
+    System.out.println(ms.cluster().member().id() + " >>>>>>>    +++ Become A Leader +++");
   }
 
   @Override
   public void onBecomeCandidate() {
-    System.out.println(ms.cluster().member().id() + " ?? onBecomeCandidate");
+    System.out.println(ms.cluster().member().id() + " ?? Become A Candidate");
   }
 
   @Override
   public void onBecomeFollower() {
-    System.out.println(ms.cluster().member().id() + " << onBecomeFollower");
+    System.out.println(ms.cluster().member().id() + " << Become A Follower");
   }
 
 }
