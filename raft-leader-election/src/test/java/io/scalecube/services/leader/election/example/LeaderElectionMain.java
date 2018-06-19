@@ -17,13 +17,12 @@ public class LeaderElectionMain {
       System.out.println("the application paramters must set with seed node address ");
     }
 
-    RaftLeaderElection leaderElection1 = new RaftLeaderElection(new Config());
+    RaftLeaderElection leaderElection1 = new GreetingServiceImpl(new Config());
 
     Microservices node1 = Microservices.builder()
         .seeds(Address.create(args[0], Integer.parseInt(args[1])))
         .services(leaderElection1).startAwait();
 
-    leaderElection1.start(node1);
   }
 
 }
