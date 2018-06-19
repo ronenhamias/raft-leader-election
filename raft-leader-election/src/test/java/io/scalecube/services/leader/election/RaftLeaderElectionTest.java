@@ -18,66 +18,52 @@ public class RaftLeaderElectionTest {
 
   @Test
   public void test() throws InterruptedException {
-  
+
     Microservices seed = Microservices.builder().startAwait();
 
     RaftLeaderElection leaderElection1 = new RaftLeaderElection(new Config());
     RaftLeaderElection leaderElection2 = new RaftLeaderElection(new Config());
     RaftLeaderElection leaderElection3 = new RaftLeaderElection(new Config());
-    
-    Microservices node1 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection1).startAwait();
-    Microservices node2 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection2).startAwait();
-    Microservices node3 = Microservices.builder().seeds(seed.cluster().address()).services(leaderElection3).startAwait();
-    
+
+    Microservices node1 =
+        Microservices.builder().seeds(seed.cluster().address()).services(leaderElection1).startAwait();
+    Microservices node2 =
+        Microservices.builder().seeds(seed.cluster().address()).services(leaderElection2).startAwait();
+    Microservices node3 =
+        Microservices.builder().seeds(seed.cluster().address()).services(leaderElection3).startAwait();
+
     leaderElection1.start(node1);
     leaderElection2.start(node2);
     leaderElection3.start(node3);
-    
+
     leaderElection1.on(State.LEADER, onLeader());
     leaderElection1.on(State.FOLLOWER, onFollower());
-    
+
     leaderElection2.on(State.LEADER, onLeader());
     leaderElection2.on(State.FOLLOWER, onFollower());
-    
+
     leaderElection3.on(State.LEADER, onLeader());
     leaderElection3.on(State.FOLLOWER, onFollower());
-   
+
     // wait for leader to be elected.
     Thread.sleep(7000);
-    
-    
-    LeaderElectionService proxy = seed.call().create().api(LeaderElectionService.class);
-    
-    CountDownLatch latch = new CountDownLatch(6);
-    
-    List<Leader> leaders = new ArrayList();
-    for(int i =0 ; i < 6 ; i ++ ){
-      proxy.leader().doAfterSuccessOrError((success,error)->{
-        latch.countDown();
-        leaders.add(success);
-      });
-    }
-    
-    latch.await(3, TimeUnit.SECONDS);
-    String selected =leaders.get(0).leaderId();
-    leaders.stream().forEach(leader->{
-      System.out.println(leader);
-      Assert.assertEquals(selected, leader.leaderId());
-    });
-    
-    
+
+    System.out.println("leaderElection1 leader:" + leaderElection1.leaderId());
+    System.out.println("leaderElection2 leader:" + leaderElection2.leaderId());
+    System.out.println("leaderElection3 leader:" + leaderElection3.leaderId());
+
     System.out.println("DONE");
-    
+    Thread.currentThread().join();
   }
 
   private Consumer onFollower() {
-    return leader->{
+    return leader -> {
       System.out.println("on state onFollower ");
     };
   }
 
   private Consumer onLeader() {
-    return leader->{
+    return leader -> {
       System.out.println("on state leader ");
     };
   }

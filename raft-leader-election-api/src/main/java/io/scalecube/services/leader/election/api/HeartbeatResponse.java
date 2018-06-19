@@ -4,15 +4,13 @@ import java.util.Arrays;
 
 public class HeartbeatResponse {
 
-  @Override
-  public String toString() {
-    return "HeartbeatResponse [term=" + Arrays.toString(term) + ", memberId=" + memberId + "]";
-  }
+  private byte[] term;
 
-  private final byte[] term;
+  private String memberId;
 
-  private final String memberId;
-  
+  public HeartbeatResponse() {};
+
+
   public HeartbeatResponse(String memberId, byte[] term) {
     this.term = term;
     this.memberId = memberId;
@@ -21,8 +19,14 @@ public class HeartbeatResponse {
   public byte[] term() {
     return term;
   }
-  
+
   public String memberId() {
     return memberId;
   }
+
+  @Override
+  public String toString() {
+    return "HeartbeatResponse [term=" + Arrays.toString(term) + ", memberId=" + memberId + "]";
+  }
+
 }
