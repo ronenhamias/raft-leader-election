@@ -4,7 +4,6 @@ import io.scalecube.services.Microservices;
 import io.scalecube.services.Reflect;
 import io.scalecube.services.ServiceCall;
 import io.scalecube.services.ServiceReference;
-import io.scalecube.services.annotations.AfterConstruct;
 import io.scalecube.services.api.ServiceMessage;
 import io.scalecube.services.leader.election.api.HeartbeatRequest;
 import io.scalecube.services.leader.election.api.HeartbeatResponse;
@@ -64,7 +63,11 @@ public abstract class RaftLeaderElection {
   public String leaderId() {
     return currentLeader.get();
   }
-
+  
+  public LogicalTimestamp currentTerm() {
+    return this.currentTerm.get();
+  }
+  
   public RaftLeaderElection(Class api, Config config) {
     this.config = config;
     this.timeout = new Random().nextInt(config.timeout() - (config.timeout() / 2)) + (config.timeout() / 2);
@@ -95,18 +98,17 @@ public abstract class RaftLeaderElection {
   }
 
 
-  
+
   public Mono<Leader> leader() {
     return Mono.just(new Leader(this.memberId, this.currentLeader.get()));
   }
 
-  
+
   public Mono<HeartbeatResponse> onHeartbeat(HeartbeatRequest request) {
     LOGGER.debug("service: [{}] member [{}] recived heartbeat request: [{}]", serviceName, this.memberId, request);
     this.timeoutScheduler.reset(this.timeout);
-
+    
     LogicalTimestamp term = LogicalTimestamp.fromBytes(request.term());
-
     if (currentTerm.get().isBefore(term)) {
       LOGGER.info("service: [{}] member: [{}] currentTerm: [{}] is before: [{}] setting new seen term.", serviceName,
           this.memberId,
@@ -121,13 +123,14 @@ public abstract class RaftLeaderElection {
           stateMachine.currentState());
       stateMachine.transition(State.FOLLOWER, term);
     }
+    
 
     this.currentLeader.set(request.memberId());
 
     return Mono.just(new HeartbeatResponse(this.memberId, currentTerm.get().toBytes()));
   }
 
-  
+
   public Mono<VoteResponse> onRequestVote(VoteRequest request) {
 
     LogicalTimestamp term = LogicalTimestamp.fromBytes(request.term());
@@ -169,7 +172,8 @@ public abstract class RaftLeaderElection {
 
       List<ServiceReference> services = findPeersServiceInstances();
 
-      services.forEach(instance -> {
+      services.stream().filter(instance ->!isSelf(instance))
+      .forEach(instance -> {
         LOGGER.debug("service: [{}] member: [{}] sending heartbeat: [{}].", serviceName, this.memberId,
             instance.endpointId());
 
@@ -197,22 +201,24 @@ public abstract class RaftLeaderElection {
     List<ServiceReference> services = findPeersServiceInstances();
     CountDownLatch consensus = new CountDownLatch((services.size() / 2));
 
-    services.forEach(instance -> {
+    services.stream().filter(instance ->!isSelf(instance))
+        .forEach(instance -> {
 
-      LOGGER.info("service: [{}] member: [{}] sending vote request to: [{}].", serviceName, this.memberId,
-          instance.endpointId());
-      ServiceMessage request = composeRequest("vote", new VoteRequest(currentTerm.get().toBytes(),
-          instance.endpointId()));
+          LOGGER.info("service: [{}] member: [{}] sending vote request to: [{}].", serviceName, this.memberId,
+              instance.endpointId());
+          ServiceMessage request = composeRequest("vote", new VoteRequest(currentTerm.get().toBytes(),
+              instance.endpointId()));
 
-      dispatcher.requestOne(request, VoteResponse.class, Address.create(instance.host(), instance.port()))
-          .subscribe(next -> {
-            VoteResponse vote = next.data();
-            LOGGER.info("service: [{}] member: [{}] recived vote response: [{}].", serviceName, this.memberId, vote);
-            if (vote.granted()) {
-              consensus.countDown();
-            }
-          });
-    });
+          dispatcher.requestOne(request, VoteResponse.class, Address.create(instance.host(), instance.port()))
+              .subscribe(next -> {
+                VoteResponse vote = next.data();
+                LOGGER.info("service: [{}] member: [{}] recived vote response: [{}].", serviceName, this.memberId,
+                    vote);
+                if (vote.granted()) {
+                  consensus.countDown();
+                }
+              });
+        });
 
     try {
       consensus.await(3, TimeUnit.SECONDS);
@@ -222,6 +228,10 @@ public abstract class RaftLeaderElection {
     }
   }
 
+  private boolean isSelf(ServiceReference serviceReference) {
+    return serviceReference.endpointId().equals(microservices.id());
+  }
+
   /**
    * node becomes leader when most of the peers granted a vote on election process.
    * 
@@ -229,19 +239,21 @@ public abstract class RaftLeaderElection {
    */
   private Consumer becomeLeader() {
     return leader -> {
+
       LOGGER.info("service: [{}] member: [{}] has become: [{}].", serviceName, this.memberId,
           stateMachine.currentState());
+      
       timeoutScheduler.stop();
       heartbeatScheduler.start(config.heartbeatInterval());
       this.currentLeader.set(this.memberId);
 
       // spread the gossip about me as a new leader.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.LEADER));
-      CompletableFuture.runAsync(()->onBecomeLeader());
+      CompletableFuture.runAsync(() -> onBecomeLeader());
     };
   }
-  
-  public abstract void onBecomeLeader(); 
+
+  public abstract void onBecomeLeader();
 
   private Message newLeaderElectionGossip(State state) {
     return Message.builder()
@@ -260,14 +272,15 @@ public abstract class RaftLeaderElection {
    */
   private Consumer becomeCandidate() {
     return election -> {
-      LOGGER.info("service: [{}] member: [{}] has become: [{}].", serviceName, this.memberId, stateMachine.currentState());
+      LOGGER.info("service: [{}] member: [{}] has become: [{}].", serviceName, this.memberId,
+          stateMachine.currentState());
       heartbeatScheduler.stop();
       currentTerm.set(clock.tick());
       sendElectionCampaign();
 
       // spread the gossip about me as candidate.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.CANDIDATE));
-      CompletableFuture.runAsync(()->onBecomeCandidate());
+      CompletableFuture.runAsync(() -> onBecomeCandidate());
     };
   }
 
@@ -280,13 +293,14 @@ public abstract class RaftLeaderElection {
    */
   private Consumer becomeFollower() {
     return follower -> {
-      LOGGER.info("service: [{}] member: [{}] has become: [{}].", serviceName, this.memberId, stateMachine.currentState());
+      LOGGER.info("service: [{}] member: [{}] has become: [{}].", serviceName, this.memberId,
+          stateMachine.currentState());
       heartbeatScheduler.stop();
       timeoutScheduler.start(this.timeout);
 
       // spread the gossip about me as follower.
       this.microservices.cluster().spreadGossip(newLeaderElectionGossip(State.FOLLOWER));
-      CompletableFuture.runAsync(()->onBecomeFollower());
+      CompletableFuture.runAsync(() -> onBecomeFollower());
     };
   }
 
