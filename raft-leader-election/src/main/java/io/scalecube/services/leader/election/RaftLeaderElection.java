@@ -4,6 +4,7 @@ import io.scalecube.services.Microservices;
 import io.scalecube.services.Reflect;
 import io.scalecube.services.ServiceCall;
 import io.scalecube.services.ServiceReference;
+import io.scalecube.services.annotations.AfterConstruct;
 import io.scalecube.services.api.ServiceMessage;
 import io.scalecube.services.leader.election.api.HeartbeatRequest;
 import io.scalecube.services.leader.election.api.HeartbeatResponse;
@@ -68,6 +69,10 @@ public abstract class RaftLeaderElection {
     return this.currentTerm.get();
   }
   
+  protected Microservices microservices() {
+    return this.microservices;
+  }
+  
   public RaftLeaderElection(Class api, Config config) {
     this.config = config;
     this.timeout = new Random().nextInt(config.timeout() - (config.timeout() / 2)) + (config.timeout() / 2);
@@ -89,7 +94,7 @@ public abstract class RaftLeaderElection {
     this.heartbeatScheduler = new JobScheduler(sendHeartbeat());
   }
 
-
+  @AfterConstruct
   protected void start(Microservices microservices) {
     this.microservices = microservices;
     this.memberId = microservices.cluster().member().id();
@@ -97,12 +102,9 @@ public abstract class RaftLeaderElection {
     this.stateMachine.transition(State.FOLLOWER, currentTerm.get());
   }
 
-
-
   public Mono<Leader> leader() {
     return Mono.just(new Leader(this.memberId, this.currentLeader.get()));
   }
-
 
   public Mono<HeartbeatResponse> onHeartbeat(HeartbeatRequest request) {
     LOGGER.debug("service: [{}] member [{}] recived heartbeat request: [{}]", serviceName, this.memberId, request);

@@ -2,6 +2,7 @@ package io.scalecube.services.leader.election;
 
 import io.scalecube.services.Microservices;
 import io.scalecube.services.Reflect;
+import io.scalecube.services.leader.election.example.GreetingService;
 import io.scalecube.services.leader.election.example.GreetingServiceImpl;
 import io.scalecube.services.leader.election.state.State;
 
@@ -28,7 +29,7 @@ public class RaftLeaderElectionTest {
         Microservices.builder().seeds(seed.cluster().address()).services(leaderElection3).startAwait();
 
     // wait for leader to be elected.
-    Thread.sleep(7000);
+    Thread.sleep(20000);
 
     System.out.println("leaderElection1 leader:" + leaderElection1.leaderId());
     System.out.println("leaderElection2 leader:" + leaderElection2.leaderId());

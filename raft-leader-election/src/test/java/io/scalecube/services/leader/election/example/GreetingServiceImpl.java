@@ -10,21 +10,19 @@ import reactor.core.publisher.Mono;
 
 import java.util.function.Consumer;
 
-public class GreetingServiceImpl extends RaftLeaderElection implements GreetingService {
-
-  private Microservices ms;
+public class GreetingServiceImpl extends RaftLeaderElection  implements GreetingService {
+  
   JobScheduler scheduler;
   
-  @AfterConstruct
-  public void start(Microservices ms) {
-    super.start(ms);
-    this.ms = ms;
-  }
-
   public GreetingServiceImpl(Config config) {
     super(GreetingService.class, config);
   }
 
+  @AfterConstruct
+  protected void start(Microservices microservices) {
+    super.start(microservices);
+  }
+  
   @Override
   public Mono<String> sayHello(String name) {
     return Mono.just("hello: " + name);
@@ -32,26 +30,26 @@ public class GreetingServiceImpl extends RaftLeaderElection implements GreetingS
 
   @Override
   public void onBecomeLeader() {
-    System.out.println(ms.cluster().member().id() + " (" + this.currentTerm().toLong() + ") >>>>>>>    +++ Become A Leader +++");
+    System.out.println(this.microservices().cluster().member().id() + " (" + this.currentTerm().toLong() + ") >>>>>>>    +++ Become A Leader +++");
     scheduler = new JobScheduler(leaderIsWorking());
     scheduler.start(1000);
   }
 
   private Consumer leaderIsWorking() {
     return doingSomeWork -> {
-      System.out.println(ms.id() + "I am working...");
+      //System.out.println(ms.id() + "I am working...");
     };
   }
 
   @Override
   public void onBecomeCandidate() {
-    System.out.println(ms.cluster().member().id() + " (" + this.currentTerm().toLong() + ") ?? Become A Candidate");
+    System.out.println(this.microservices().cluster().member().id() + " (" + this.currentTerm().toLong() + ") ?? Become A Candidate");
     scheduler.stop();
   }
 
   @Override
   public void onBecomeFollower() {
-    System.out.println(ms.cluster().member().id() + " (" + this.currentTerm().toLong() + ") << Become A Follower");
+    System.out.println(this.microservices().cluster().member().id() + " (" + this.currentTerm().toLong() + ") << Become A Follower");
     scheduler.stop();
   }
 }
