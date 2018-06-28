@@ -3,8 +3,8 @@ package io.scalecube.services.leader.election;
 public class Config {
 
   
-  private int heartbeatInterval = 300;
-  private int timeout = 1000;
+  private int heartbeatInterval = 200;
+  private int timeout = 800;
   
   public Config() {
   }
